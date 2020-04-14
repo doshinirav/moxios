@@ -11,111 +11,125 @@ $ npm install moxios --save-dev
 ## Example
 
 ```js
-import axios from 'axios'
-import moxios from 'moxios'
-import sinon from 'sinon'
-import { equal } from 'assert'
+import axios from 'axios';
+import moxios from 'moxios';
+import sinon from 'sinon';
+import { equal } from 'assert';
 
 describe('mocking axios requests', function () {
+    describe('across entire suite', function () {
+        beforeEach(function () {
+            // import and pass your custom axios instance to this method
+            moxios.install();
+        });
 
-  describe('across entire suite', function () {
+        afterEach(function () {
+            // import and pass your custom axios instance to this method
+            moxios.uninstall();
+        });
 
-    beforeEach(function () {
-      // import and pass your custom axios instance to this method
-      moxios.install()
-    })
+        it('specify response for a specific request', function (done) {
+            let input = document.querySelector('.UserList__Filter__Input');
+            let button = document.querySelector('.UserList__Filter__Button');
 
-    afterEach(function () {
-      // import and pass your custom axios instance to this method
-      moxios.uninstall()
-    })
+            input.value = 'flintstone';
+            button.click();
 
-    it('specify response for a specific request', function (done) {
-      let input = document.querySelector('.UserList__Filter__Input')
-      let button = document.querySelector('.UserList__Filter__Button')
+            // Elsewhere in your code axios.get('/users/search', { params: { q: 'flintstone' } }) is called
 
-      input.value = 'flintstone'
-      button.click()
+            moxios.wait(function () {
+                let request = moxios.requests.mostRecent();
+                request
+                    .respondWith({
+                        status: 200,
+                        response: [
+                            {
+                                id: 1,
+                                firstName: 'Fred',
+                                lastName: 'Flintstone',
+                            },
+                            {
+                                id: 2,
+                                firstName: 'Wilma',
+                                lastName: 'Flintstone',
+                            },
+                        ],
+                    })
+                    .then(function () {
+                        let list = document.querySelector('.UserList__Data');
+                        equal(list.rows.length, 2);
+                        equal(list.rows[0].cells[0].innerHTML, 'Fred');
+                        equal(list.rows[1].cells[0].innerHTML, 'Wilma');
+                        done();
+                    });
+            });
+        });
 
-      // Elsewhere in your code axios.get('/users/search', { params: { q: 'flintstone' } }) is called
+        it('stub response for any matching request URL', function (done) {
+            // Match against an exact URL value
+            moxios.stubRequest('/say/hello', {
+                status: 200,
+                responseText: 'hello',
+            });
 
-      moxios.wait(function () {
-        let request = moxios.requests.mostRecent()
-        request.respondWith({
-          status: 200,
-          response: [
-            { id: 1, firstName: 'Fred', lastName: 'Flintstone' },
-            { id: 2, firstName: 'Wilma', lastName: 'Flintstone' }
-          ]
-        }).then(function () {
-          let list = document.querySelector('.UserList__Data')
-          equal(list.rows.length, 2)
-          equal(list.rows[0].cells[0].innerHTML, 'Fred')
-          equal(list.rows[1].cells[0].innerHTML, 'Wilma')
-          done()
-        })
-      })
-    })
+            // Alternatively URL can be a RegExp
+            moxios.stubRequest(/say.*/, {
+                /* ... */
+            });
 
-    it('stub response for any matching request URL', function (done) {
-      // Match against an exact URL value
-      moxios.stubRequest('/say/hello', {
-        status: 200,
-        responseText: 'hello'
-      })
+            let onFulfilled = sinon.spy();
+            axios.get('/say/hello').then(onFulfilled);
 
-      // Alternatively URL can be a RegExp
-      moxios.stubRequest(/say.*/, {/* ... */})
+            moxios.wait(function () {
+                equal(onFulfilled.getCall(0).args[0].data, 'hello');
+                done();
+            });
+        });
+    });
 
-      let onFulfilled = sinon.spy()
-      axios.get('/say/hello').then(onFulfilled)
+    it('just for a single spec', function (done) {
+        moxios.withMock(function () {
+            let onFulfilled = sinon.spy();
+            axios.get('/users/12345').then(onFulfilled);
 
-      moxios.wait(function () {
-        equal(onFulfilled.getCall(0).args[0].data, 'hello')
-        done()
-      })
-    })
+            moxios.wait(function () {
+                let request = moxios.requests.mostRecent();
+                request
+                    .respondWith({
+                        status: 200,
+                        response: {
+                            id: 12345,
+                            firstName: 'Fred',
+                            lastName: 'Flintstone',
+                        },
+                    })
+                    .then(function () {
+                        equal(onFulfilled.called, true);
+                        done();
+                    });
+            });
+        });
+    });
 
-  })
+    it('Should reject the request', function (done) {
+        const errorResp = {
+            status: 400,
+            response: { message: 'invalid data' },
+        };
 
-  it('just for a single spec', function (done) {
-    moxios.withMock(function () {
-      let onFulfilled = sinon.spy()
-      axios.get('/users/12345').then(onFulfilled)
+        moxios
+            .wait(function () {
+                let request = moxios.requests.mostRecent();
+                request.reject(errorResp);
+            })
+            .catch(function (err) {
+                equal(err.status, errorResp.status);
+                equal(err.response.message, errorResp.response.message);
+                done();
+            });
+    });
+});
 
-      moxios.wait(function () {
-        let request = moxios.requests.mostRecent()
-        request.respondWith({
-          status: 200,
-          response: {
-            id: 12345, firstName: 'Fred', lastName: 'Flintstone'
-          }
-        }).then(function () {
-          equal(onFulfilled.called, true)
-          done()
-        })
-      })
-    })
-  })
-
-
-  it('Should reject the request', funciton (done) {
-    const errorResp = {
-        status: 400,
-        response: { message: 'invalid data' }
-    }
-    
-    moxios.wait(function () {
-      let request = moxios.requests.mostRecent()
-      request.reject(errorResp)
-      }).catch(function (err) {
-        equal(err.status, errorResp.status)
-        equal(err.response.message, errorResp.response.message)
-        done()
-      })
-    })
-  })
-})
 ```
 
 ## Mocking a axios.create() instance
